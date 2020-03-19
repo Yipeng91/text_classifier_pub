@@ -21,6 +21,8 @@ from __future__ import print_function
 import collections
 import csv
 import os
+os.environ["CUDA_VISIBLE_DEVICES"]="-1"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import modeling
 import optimization
 import tokenization
@@ -75,7 +77,7 @@ flags.DEFINE_bool(
     "do_predict", False,
     "Whether to run the model in inference mode on the test set.")
 
-flags.DEFINE_integer("train_batch_size", 32, "Total batch size for training.")
+flags.DEFINE_integer("train_batch_size", 16, "Total batch size for training.")
 
 flags.DEFINE_integer("eval_batch_size", 8, "Total batch size for eval.")
 
@@ -91,12 +93,13 @@ flags.DEFINE_float(
     "Proportion of training to perform linear learning rate warmup for. "
     "E.g., 0.1 = 10% of training.")
 
-flags.DEFINE_integer("save_checkpoints_steps", 1000,
+flags.DEFINE_integer("save_checkpoints_steps", 300,
                      "How often to save the model checkpoint.")
 
 flags.DEFINE_integer("iterations_per_loop", 1000,
                      "How many steps to make in each estimator call.")
 
+flags.DEFINE_bool("use_cpu", True, "Whether to use TPU or GPU/CPU.")
 flags.DEFINE_bool("use_tpu", False, "Whether to use TPU or GPU/CPU.")
 
 tf.flags.DEFINE_string(
@@ -788,6 +791,7 @@ def main(_):
       "mnli": MnliProcessor,
       "mrpc": MrpcProcessor,
       "xnli": XnliProcessor,
+      "mytask": MyTaskProcessor,
   }
 
   tokenization.validate_case_matches_checkpoint(FLAGS.do_lower_case,
@@ -877,7 +881,9 @@ def main(_):
         seq_length=FLAGS.max_seq_length,
         is_training=True,
         drop_remainder=True)
-    estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
+    tensors_to_log = {'train loss': 'loss/Mean:0'}
+    logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=100)
+    estimator.train(input_fn=train_input_fn,hooks=[logging_hook], max_steps=num_train_steps)
 
   if FLAGS.do_eval:
     eval_examples = processor.get_dev_examples(FLAGS.data_dir)
@@ -970,6 +976,53 @@ def main(_):
         writer.write(output_line)
         num_written_lines += 1
     assert num_written_lines == num_actual_predict_examples
+
+class MyTaskProcessor(DataProcessor):
+  """Processor for my task-news classification """
+  def __init__(self):
+    self.labels = ['风险', '正常']
+
+  def get_train_examples(self, data_dir):
+    return self._create_examples(
+      self._read_tsv(os.path.join(data_dir, 'train_examples.csv')), 'train')
+
+  def get_dev_examples(self, data_dir):
+    return self._create_examples(
+      self._read_tsv(os.path.join(data_dir, 'dev_examples.csv')), 'val')
+
+  def get_test_examples(self, data_dir):
+    return self._create_examples(
+      self._read_tsv(os.path.join(data_dir, 'test_examples.csv')), 'test')
+
+  def get_labels(self):
+    return self.labels
+
+  def _create_examples(self, lines, set_type):
+    """create examples for the training and val sets"""
+    examples = []
+    for (i, line) in enumerate(lines):
+      guid = '%s-%s' %(set_type, i)
+      #print(line)
+      if line[0]  not in self.labels or type(line[0]) != str:
+          continue
+      text_a = tokenization.convert_to_unicode(line[1])
+      label = tokenization.convert_to_unicode(line[0])
+      examples.append(InputExample(guid=guid, text_a=text_a, label=label))
+    return examples
+
+  @classmethod
+  def _read_tsv(cls, input_file, quotechar=None):
+    """Reads a tab separated value file."""
+    import pandas as pd
+    import numpy as np
+    lines = np.array(pd.read_csv(input_file,header=None)).tolist()
+    return  lines
+    with tf.gfile.Open(input_file, "r") as f:
+      reader = csv.reader(f, delimiter="\t", quotechar=quotechar)
+      lines = []
+      for line in reader:
+        lines.append(line)
+      return lines
 
 
 if __name__ == "__main__":

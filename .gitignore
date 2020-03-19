@@ -7,7 +7,8 @@ __pycache__/
 
 # C extensions
 *.so
-
+mytask_output
+mytask_output3
 # Distribution / packaging
 .Python
 build/
