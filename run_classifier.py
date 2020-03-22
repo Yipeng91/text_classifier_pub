@@ -336,6 +336,8 @@ class MrpcProcessor(DataProcessor):
     return examples
 
 
+
+
 class ColaProcessor(DataProcessor):
   """Processor for the CoLA data set (GLUE version)."""
 
@@ -976,6 +978,7 @@ def main(_):
         writer.write(output_line)
         num_written_lines += 1
     assert num_written_lines == num_actual_predict_examples
+    processor.merge_test_examples_and_result(FLAGS.data_dir,output_predict_file)
 
 class MyTaskProcessor(DataProcessor):
   """Processor for my task-news classification """
@@ -1003,8 +1006,9 @@ class MyTaskProcessor(DataProcessor):
     for (i, line) in enumerate(lines):
       guid = '%s-%s' %(set_type, i)
       #print(line)
-      if line[0]  not in self.labels or type(line[0]) != str:
-          continue
+      assert line[0]  in self.labels
+      if type(line[1]) != str:
+        line[1] = str(line[1])
       text_a = tokenization.convert_to_unicode(line[1])
       label = tokenization.convert_to_unicode(line[0])
       examples.append(InputExample(guid=guid, text_a=text_a, label=label))
@@ -1024,6 +1028,13 @@ class MyTaskProcessor(DataProcessor):
         lines.append(line)
       return lines
 
+  def merge_test_examples_and_result(self,data_dir,result_data_dir):
+      import pandas as pd
+      examples = pd.read_csv(os.path.join(data_dir, 'test_examples.csv'))
+      result = pd.read_csv(result_data_dir)
+      merge_result = pd.concat([examples,result],axis=1)
+      merge_result.to_csv(result_data_dir)
+      merge_result.close()
 
 if __name__ == "__main__":
   flags.mark_flag_as_required("data_dir")
